@@ -1,0 +1,1926 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"
+  />
+
+  <title>AirSight – Markerless AR</title>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      font-family: Arial, Helvetica, sans-serif;
+      background: #06150f;
+      color: white;
+    }
+
+    canvas {
+      display: block;
+    }
+
+    /* Interface displayed over the camera */
+    #overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      pointer-events: auto;
+    }
+
+    #topPanel {
+      position: absolute;
+      top: max(12px, env(safe-area-inset-top));
+      left: 12px;
+      right: 12px;
+      max-height: 55vh;
+      padding: 14px;
+      overflow-y: auto;
+      border: 1px solid rgba(85, 232, 155, 0.4);
+      border-radius: 15px;
+      background: rgba(4, 30, 21, 0.89);
+      backdrop-filter: blur(8px);
+    }
+
+    #topPanel h1 {
+      margin: 0 0 3px;
+      color: #55e89b;
+      font-size: 22px;
+    }
+
+    #subtitle {
+      margin-bottom: 8px;
+      color: #b8d4c7;
+      font-size: 12px;
+    }
+
+    #status {
+      margin: 5px 0 10px;
+      color: #e3f3eb;
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    #airInfo {
+      margin-bottom: 10px;
+      padding: 10px;
+      border-radius: 9px;
+      background: rgba(255, 255, 255, 0.09);
+      font-size: 14px;
+      font-weight: bold;
+    }
+
+    #cityButtons,
+    #actionButtons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+    }
+
+    #actionButtons {
+      margin-top: 9px;
+    }
+
+    button {
+      padding: 9px 11px;
+      border: none;
+      border-radius: 8px;
+      background: #14804d;
+      color: white;
+      font-size: 13px;
+      font-weight: bold;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    button.active {
+      background: #55e89b;
+      color: #052216;
+    }
+
+    button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    #plantButton {
+      background: #278d4f;
+    }
+
+    #resetButton {
+      background: #b53e3e;
+    }
+
+    /*
+      Instructions are placed above the Start AR button.
+      This prevents the overlap visible in your screenshot.
+    */
+    #instructions {
+      position: absolute;
+      bottom: calc(95px + env(safe-area-inset-bottom));
+      left: 50%;
+      z-index: 20;
+      width: min(92%, 520px);
+      padding: 11px 14px;
+      border-radius: 12px;
+      background: rgba(4, 30, 21, 0.9);
+      color: white;
+      text-align: center;
+      font-size: 13px;
+      line-height: 1.4;
+      transform: translateX(-50%);
+      pointer-events: none;
+    }
+
+    /*
+      Force the Three.js AR button to remain clearly visible.
+    */
+    #ARButton {
+      position: fixed !important;
+      right: auto !important;
+      bottom: calc(18px + env(safe-area-inset-bottom)) !important;
+      left: 50% !important;
+      z-index: 9999 !important;
+      width: 190px !important;
+      height: 50px !important;
+      margin: 0 !important;
+      padding: 0 18px !important;
+      border: 2px solid white !important;
+      border-radius: 25px !important;
+      background: #168a52 !important;
+      color: white !important;
+      font-size: 15px !important;
+      font-weight: bold !important;
+      opacity: 1 !important;
+      transform: translateX(-50%) !important;
+      pointer-events: auto !important;
+    }
+
+    #unsupported {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      padding: 30px;
+      background: #06150f;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+    }
+
+    #unsupportedContent {
+      max-width: 550px;
+    }
+
+    #unsupported h2,
+    #unsupported a {
+      color: #55e89b;
+    }
+
+    @media (max-width: 500px) {
+      #topPanel h1 {
+        font-size: 20px;
+      }
+
+      button {
+        padding: 8px 10px;
+        font-size: 12px;
+      }
+    }
+
+    @media (max-height: 650px) {
+      #topPanel {
+        max-height: 48vh;
+      }
+
+      #instructions {
+        bottom: calc(82px + env(safe-area-inset-bottom));
+        padding: 8px 12px;
+        font-size: 11px;
+      }
+
+      #ARButton {
+        height: 44px !important;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div id="overlay">
+    <div id="topPanel">
+      <h1>AirSight</h1>
+
+      <div id="subtitle">
+        Live Air-Quality City Visualisation
+      </div>
+
+      <div id="status">
+        Loading the city and tree models…
+      </div>
+
+      <div id="airInfo">
+        City: Colombo | AQI: Loading…
+      </div>
+
+      <div id="cityButtons">
+        <button data-city="myLocation">
+          My Location
+        </button>
+
+        <button data-city="colombo" class="active">
+          Colombo
+        </button>
+
+        <button data-city="delhi">
+          Delhi
+        </button>
+
+        <button data-city="beijing">
+          Beijing
+        </button>
+
+        <button data-city="london">
+          London
+        </button>
+      </div>
+
+      <div id="actionButtons">
+        <button id="plantButton" disabled>
+          Plant a tree
+        </button>
+
+        <button id="resetButton" disabled>
+          Reset placement
+        </button>
+      </div>
+    </div>
+
+    <div id="instructions">
+      Select “Start AR”, move your phone slowly to detect the floor,
+      then tap the green ring to place the city.
+    </div>
+  </div>
+
+  <div id="unsupported">
+    <div id="unsupportedContent">
+      <h2>Markerless AR is not supported</h2>
+
+      <p>
+        This browser or device does not support the immersive WebXR
+        hit-test features required by AirSight.
+      </p>
+
+      <p>
+        Try Chrome on an ARCore-compatible Android phone. Standard
+        iOS Safari has limited support for this type of WebXR experience.
+      </p>
+
+      <a href="./index.html">Return to the home page</a>
+    </div>
+  </div>
+
+  <script type="module">
+    import * as THREE from "three";
+
+    import { ARButton } from
+      "three/addons/webxr/ARButton.js";
+
+    import { GLTFLoader } from
+      "three/addons/loaders/GLTFLoader.js";
+
+    // =========================================================
+    // 1. CONFIGURATION
+    // =========================================================
+
+    /*
+      Add your NEW OpenWeatherMap API key here.
+      Do not reuse the key previously shared.
+    */
+    const OPENWEATHER_API_KEY =
+      "a6b96540b79a8046356751424d07789f";
+
+    const CITY_MODEL_PATH =
+      "./assets/models/low_poly_city_diorama_scene.glb";
+
+    const TREE_MODEL_PATH =
+      "./assets/models/giant_low_poly_tree.glb";
+
+    /*
+      The city will be approximately 0.55 metres across.
+    */
+    const CITY_TARGET_SIZE = 0.55;
+
+    /*
+      Each tree will be approximately 0.085 metres tall.
+    */
+    const TREE_TARGET_HEIGHT = 0.085;
+
+    /*
+      Limit planted trees to protect mobile performance.
+    */
+    const MAX_TREES = 6;
+
+    // Maximum number of pollution particles.
+    const MAX_POLLUTION_PARTICLES = 500;
+
+    // =========================================================
+    // 2. CITY AND AQI DATA
+    // =========================================================
+
+    const cities = {
+      colombo: {
+        name: "Colombo",
+        lat: 6.9271,
+        lon: 79.8612,
+        fallbackAQI: 3
+      },
+
+      delhi: {
+        name: "Delhi",
+        lat: 28.6139,
+        lon: 77.2090,
+        fallbackAQI: 5
+      },
+
+      beijing: {
+        name: "Beijing",
+        lat: 39.9042,
+        lon: 116.4074,
+        fallbackAQI: 4
+      },
+
+      london: {
+        name: "London",
+        lat: 51.5072,
+        lon: -0.1276,
+        fallbackAQI: 2
+      }
+    };
+
+    const aqiStyles = {
+      1: {
+        label: "Good",
+        color: 0x48d668
+      },
+
+      2: {
+        label: "Fair",
+        color: 0xb4d93f
+      },
+
+      3: {
+        label: "Moderate",
+        color: 0xf39a32
+      },
+
+      4: {
+        label: "Poor",
+        color: 0xe05232
+      },
+
+      5: {
+        label: "Very Poor",
+        color: 0x6f281c
+      }
+    };
+
+    /*
+      Number of visible particles for each AQI level.
+    */
+    const particleCountsByAQI = {
+      1: 60,
+      2: 140,
+      3: 240,
+      4: 360,
+      5: 500
+    };
+
+    /*
+      Particle opacity for each AQI level.
+    */
+    const particleOpacityByAQI = {
+      1: 0.18,
+      2: 0.30,
+      3: 0.46,
+      4: 0.64,
+      5: 0.82
+    };
+
+    /*
+      Particle size for each AQI level.
+    */
+    const particleSizeByAQI = {
+      1: 0.008,
+      2: 0.010,
+      3: 0.013,
+      4: 0.017,
+      5: 0.021
+    };
+
+    const airQualityCache = new Map();
+
+    let selectedCityKey = "colombo";
+    let selectedCityName = "Colombo";
+    let currentAQI = 3;
+
+    /*
+      This controls the simulated visual improvement created by
+      planting virtual trees.
+    */
+    let simulatedPollutionReduction = 0;
+
+    // =========================================================
+    // 3. HTML ELEMENTS
+    // =========================================================
+
+    const overlay =
+      document.getElementById("overlay");
+
+    const statusElement =
+      document.getElementById("status");
+
+    const airInfoElement =
+      document.getElementById("airInfo");
+
+    const instructionsElement =
+      document.getElementById("instructions");
+
+    const unsupportedElement =
+      document.getElementById("unsupported");
+
+    const plantButton =
+      document.getElementById("plantButton");
+
+    const resetButton =
+      document.getElementById("resetButton");
+
+    // =========================================================
+    // 4. THREE.JS SCENE
+    // =========================================================
+
+    const scene = new THREE.Scene();
+
+    const camera =
+      new THREE.PerspectiveCamera(
+        70,
+        window.innerWidth /
+          window.innerHeight,
+        0.01,
+        20
+      );
+
+    const renderer =
+      new THREE.WebGLRenderer({
+        antialias: true,
+        alpha: true,
+        powerPreference:
+          "high-performance"
+      });
+
+    renderer.setPixelRatio(
+      Math.min(
+        window.devicePixelRatio,
+        2
+      )
+    );
+
+    renderer.setSize(
+      window.innerWidth,
+      window.innerHeight
+    );
+
+    renderer.xr.enabled = true;
+
+    renderer.outputColorSpace =
+      THREE.SRGBColorSpace;
+
+    /*
+      Shadows are intentionally disabled for mobile performance.
+    */
+    renderer.shadowMap.enabled = false;
+
+    document.body.appendChild(
+      renderer.domElement
+    );
+
+    const hemisphereLight =
+      new THREE.HemisphereLight(
+        0xffffff,
+        0x40594d,
+        2.2
+      );
+
+    scene.add(hemisphereLight);
+
+    const directionalLight =
+      new THREE.DirectionalLight(
+        0xffffff,
+        2.0
+      );
+
+    directionalLight.position.set(
+      1,
+      2,
+      1
+    );
+
+    scene.add(directionalLight);
+
+    // =========================================================
+    // 5. HIT-TEST RETICLE
+    // =========================================================
+
+    const reticle =
+      new THREE.Mesh(
+        new THREE.RingGeometry(
+          0.06,
+          0.08,
+          32
+        ).rotateX(-Math.PI / 2),
+
+        new THREE.MeshBasicMaterial({
+          color: 0x35e88a,
+          side: THREE.DoubleSide
+        })
+      );
+
+    reticle.matrixAutoUpdate = false;
+    reticle.visible = false;
+
+    scene.add(reticle);
+
+    let hitTestSource = null;
+    let localReferenceSpace = null;
+    let hitTestRequested = false;
+
+    // =========================================================
+    // 6. CITY ROOT
+    // =========================================================
+
+    const cityRoot =
+      new THREE.Group();
+
+    cityRoot.visible = false;
+
+    scene.add(cityRoot);
+
+    let cityModel = null;
+    let treeTemplate = null;
+
+    let cityPlaced = false;
+    let treeCount = 0;
+
+    // =========================================================
+    // 7. ANIMATED POLLUTION PARTICLES
+    // =========================================================
+
+    /*
+      Generate a soft particle texture in JavaScript.
+      No external PNG file is required.
+    */
+    function createParticleTexture() {
+      const canvas =
+        document.createElement("canvas");
+
+      canvas.width = 64;
+      canvas.height = 64;
+
+      const context =
+        canvas.getContext("2d");
+
+      const gradient =
+        context.createRadialGradient(
+          32,
+          32,
+          0,
+          32,
+          32,
+          32
+        );
+
+      gradient.addColorStop(
+        0,
+        "rgba(255,255,255,0.95)"
+      );
+
+      gradient.addColorStop(
+        0.3,
+        "rgba(255,255,255,0.65)"
+      );
+
+      gradient.addColorStop(
+        0.7,
+        "rgba(255,255,255,0.2)"
+      );
+
+      gradient.addColorStop(
+        1,
+        "rgba(255,255,255,0)"
+      );
+
+      context.fillStyle = gradient;
+
+      context.fillRect(
+        0,
+        0,
+        64,
+        64
+      );
+
+      return new THREE.CanvasTexture(
+        canvas
+      );
+    }
+
+    /*
+      Each particle requires an X, Y and Z position.
+    */
+    const pollutionPositions =
+      new Float32Array(
+        MAX_POLLUTION_PARTICLES * 3
+      );
+
+    const pollutionSpeeds =
+      new Float32Array(
+        MAX_POLLUTION_PARTICLES
+      );
+
+    const pollutionPhases =
+      new Float32Array(
+        MAX_POLLUTION_PARTICLES
+      );
+
+    for (
+      let i = 0;
+      i < MAX_POLLUTION_PARTICLES;
+      i++
+    ) {
+      const index = i * 3;
+
+      /*
+        Spread particles above the full city area.
+      */
+      pollutionPositions[index] =
+        (Math.random() - 0.5) * 0.54;
+
+      pollutionPositions[index + 1] =
+        0.025 +
+        Math.random() * 0.22;
+
+      pollutionPositions[index + 2] =
+        (Math.random() - 0.5) * 0.43;
+
+      pollutionSpeeds[i] =
+        0.00004 +
+        Math.random() * 0.00008;
+
+      pollutionPhases[i] =
+        Math.random() *
+        Math.PI *
+        2;
+    }
+
+    const pollutionGeometry =
+      new THREE.BufferGeometry();
+
+    pollutionGeometry.setAttribute(
+      "position",
+      new THREE.BufferAttribute(
+        pollutionPositions,
+        3
+      )
+    );
+
+    const pollutionMaterial =
+      new THREE.PointsMaterial({
+        color:
+          aqiStyles[currentAQI].color,
+
+        size:
+          particleSizeByAQI[
+            currentAQI
+          ],
+
+        map:
+          createParticleTexture(),
+
+        transparent: true,
+
+        opacity:
+          particleOpacityByAQI[
+            currentAQI
+          ],
+
+        depthWrite: false,
+        sizeAttenuation: true,
+        blending:
+          THREE.NormalBlending
+      });
+
+    const pollutionParticles =
+      new THREE.Points(
+        pollutionGeometry,
+        pollutionMaterial
+      );
+
+    pollutionParticles.renderOrder = 10;
+
+    cityRoot.add(
+      pollutionParticles
+    );
+
+    pollutionGeometry.setDrawRange(
+      0,
+      particleCountsByAQI[
+        currentAQI
+      ]
+    );
+
+    // =========================================================
+    // 8. MODEL LOADING AND AUTOMATIC SCALING
+    // =========================================================
+
+    const loader = new GLTFLoader();
+
+    function loadGLTF(path) {
+      return new Promise(
+        (resolve, reject) => {
+          loader.load(
+            path,
+
+            gltf => {
+              resolve(gltf.scene);
+            },
+
+            progressEvent => {
+              if (
+                progressEvent.total > 0
+              ) {
+                const percentage =
+                  progressEvent.loaded /
+                  progressEvent.total *
+                  100;
+
+                console.log(
+                  `${path}: ${percentage.toFixed(0)}%`
+                );
+              }
+            },
+
+            error => {
+              reject(error);
+            }
+          );
+        }
+      );
+    }
+
+    /*
+      Measure a model and scale it to an exact target size.
+    */
+    function diagnoseAndNormalizeModel(
+      originalModel,
+      modelName,
+      targetSize,
+      mode = "horizontal"
+    ) {
+      originalModel.updateMatrixWorld(
+        true
+      );
+
+      const rawBox =
+        new THREE.Box3().setFromObject(
+          originalModel
+        );
+
+      const rawSize =
+        new THREE.Vector3();
+
+      rawBox.getSize(rawSize);
+
+      const measurement =
+        mode === "height"
+          ? rawSize.y
+          : Math.max(
+              rawSize.x,
+              rawSize.z
+            );
+
+      if (
+        !Number.isFinite(
+          measurement
+        ) ||
+        measurement <= 0
+      ) {
+        throw new Error(
+          `${modelName} has an invalid size.`
+        );
+      }
+
+      const suggestedScale =
+        targetSize / measurement;
+
+      console.group(
+        `${modelName} scale diagnostic`
+      );
+
+      console.log(
+        "Raw width:",
+        rawSize.x
+      );
+
+      console.log(
+        "Raw height:",
+        rawSize.y
+      );
+
+      console.log(
+        "Raw depth:",
+        rawSize.z
+      );
+
+      console.log(
+        "Target size:",
+        targetSize
+      );
+
+      console.log(
+        "Suggested scale:",
+        suggestedScale
+      );
+
+      console.groupEnd();
+
+      const wrapper =
+        new THREE.Group();
+
+      originalModel.scale.setScalar(
+        suggestedScale
+      );
+
+      originalModel.updateMatrixWorld(
+        true
+      );
+
+      const scaledBox =
+        new THREE.Box3().setFromObject(
+          originalModel
+        );
+
+      const scaledCentre =
+        new THREE.Vector3();
+
+      scaledBox.getCenter(
+        scaledCentre
+      );
+
+      /*
+        Centre the model and place its bottom at y = 0.
+      */
+      originalModel.position.x -=
+        scaledCentre.x;
+
+      originalModel.position.z -=
+        scaledCentre.z;
+
+      originalModel.position.y -=
+        scaledBox.min.y;
+
+      wrapper.add(originalModel);
+
+      return wrapper;
+    }
+
+    async function loadModels() {
+      try {
+        statusElement.textContent =
+          "Loading the low-poly models…";
+
+        const [
+          loadedCity,
+          loadedTree
+        ] = await Promise.all([
+          loadGLTF(
+            CITY_MODEL_PATH
+          ),
+
+          loadGLTF(
+            TREE_MODEL_PATH
+          )
+        ]);
+
+        cityModel =
+          diagnoseAndNormalizeModel(
+            loadedCity,
+            "AirSight city",
+            CITY_TARGET_SIZE,
+            "horizontal"
+          );
+
+        treeTemplate =
+          diagnoseAndNormalizeModel(
+            loadedTree,
+            "AirSight tree",
+            TREE_TARGET_HEIGHT,
+            "height"
+          );
+
+        cityRoot.add(cityModel);
+
+        statusElement.textContent =
+          "Models loaded. Select Start AR.";
+
+        await selectCity(
+          "colombo"
+        );
+      } catch (error) {
+        console.error(
+          "Model loading failed:",
+          error
+        );
+
+        statusElement.textContent =
+          "A model failed to load. Check its path and filename.";
+      }
+    }
+
+    // =========================================================
+    // 9. UPDATE POLLUTION APPEARANCE
+    // =========================================================
+
+    function updatePollution() {
+      const style =
+        aqiStyles[currentAQI];
+
+      const baselineCount =
+        particleCountsByAQI[
+          currentAQI
+        ];
+
+      const baselineOpacity =
+        particleOpacityByAQI[
+          currentAQI
+        ];
+
+      /*
+        Every tree removes some visible particles.
+      */
+      const removedParticles =
+        treeCount * 35;
+
+      const visibleParticles =
+        Math.max(
+          30,
+          baselineCount -
+            removedParticles
+        );
+
+      pollutionGeometry.setDrawRange(
+        0,
+        visibleParticles
+      );
+
+      pollutionMaterial.color.setHex(
+        style.color
+      );
+
+      pollutionMaterial.size =
+        particleSizeByAQI[
+          currentAQI
+        ];
+
+      pollutionMaterial.opacity =
+        Math.max(
+          0.10,
+          baselineOpacity -
+            simulatedPollutionReduction
+        );
+
+      pollutionMaterial.needsUpdate =
+        true;
+    }
+
+    // =========================================================
+    // 10. AIR-QUALITY API
+    // =========================================================
+
+    async function fetchAQI(
+      cacheKey,
+      cityData
+    ) {
+      if (
+        airQualityCache.has(
+          cacheKey
+        )
+      ) {
+        return {
+          aqi:
+            airQualityCache.get(
+              cacheKey
+            ),
+
+          usedFallback: false,
+          cached: true
+        };
+      }
+
+      if (
+        !OPENWEATHER_API_KEY ||
+        OPENWEATHER_API_KEY ===
+          "PASTE_YOUR_NEW_API_KEY_HERE"
+      ) {
+        return {
+          aqi:
+            cityData.fallbackAQI,
+
+          usedFallback: true,
+          cached: false
+        };
+      }
+
+      const url =
+        "https://api.openweathermap.org/data/2.5/air_pollution" +
+        `?lat=${cityData.lat}` +
+        `&lon=${cityData.lon}` +
+        `&appid=${encodeURIComponent(
+          OPENWEATHER_API_KEY
+        )}`;
+
+      try {
+        const response =
+          await fetch(url);
+
+        if (!response.ok) {
+          throw new Error(
+            `HTTP ${response.status}`
+          );
+        }
+
+        const data =
+          await response.json();
+
+        const aqi =
+          Number(
+            data?.list?.[0]?.main?.aqi
+          );
+
+        if (
+          !Number.isInteger(aqi) ||
+          aqi < 1 ||
+          aqi > 5
+        ) {
+          throw new Error(
+            "Invalid AQI response."
+          );
+        }
+
+        airQualityCache.set(
+          cacheKey,
+          aqi
+        );
+
+        return {
+          aqi,
+          usedFallback: false,
+          cached: false
+        };
+      } catch (error) {
+        console.warn(
+          "Using fallback AQI:",
+          error
+        );
+
+        return {
+          aqi:
+            cityData.fallbackAQI,
+
+          usedFallback: true,
+          cached: false
+        };
+      }
+    }
+
+    function updateAirInformation(
+      source
+    ) {
+      const style =
+        aqiStyles[currentAQI];
+
+      airInfoElement.textContent =
+        `City: ${selectedCityName} | ` +
+        `AQI: ${currentAQI}/5 – ${style.label} | ` +
+        source;
+    }
+
+    async function selectCity(
+      cityKey
+    ) {
+      selectedCityKey = cityKey;
+
+      /*
+        Reset the simulated reduction when changing city.
+      */
+      simulatedPollutionReduction = 0;
+
+      document
+        .querySelectorAll(
+          "[data-city]"
+        )
+        .forEach(button => {
+          button.classList.toggle(
+            "active",
+            button.dataset.city ===
+              cityKey
+          );
+        });
+
+      if (
+        cityKey === "myLocation"
+      ) {
+        selectMyLocation();
+        return;
+      }
+
+      const cityData =
+        cities[cityKey];
+
+      selectedCityName =
+        cityData.name;
+
+      airInfoElement.textContent =
+        `City: ${selectedCityName} | AQI: Loading…`;
+
+      const result =
+        await fetchAQI(
+          cityKey,
+          cityData
+        );
+
+      currentAQI = result.aqi;
+
+      updatePollution();
+
+      const source =
+        result.usedFallback
+          ? "Fallback data"
+          : result.cached
+            ? "Cached live data"
+            : "Live data";
+
+      updateAirInformation(
+        source
+      );
+
+      statusElement.textContent =
+        result.usedFallback
+          ? "Live AQI was unavailable. Fallback data is shown."
+          : "Live OpenWeatherMap air-quality data loaded.";
+    }
+
+    function selectMyLocation() {
+      selectedCityName =
+        "My Location";
+
+      airInfoElement.textContent =
+        "City: My Location | AQI: Locating…";
+
+      if (
+        !navigator.geolocation
+      ) {
+        applyLocationFallback(
+          "Geolocation is unavailable."
+        );
+
+        return;
+      }
+
+      navigator.geolocation
+        .getCurrentPosition(
+          async position => {
+            const localData = {
+              name: "My Location",
+
+              lat:
+                position.coords
+                  .latitude,
+
+              lon:
+                position.coords
+                  .longitude,
+
+              fallbackAQI: 3
+            };
+
+            const cacheKey =
+              `my-location-` +
+              `${localData.lat.toFixed(2)}-` +
+              `${localData.lon.toFixed(2)}`;
+
+            const result =
+              await fetchAQI(
+                cacheKey,
+                localData
+              );
+
+            currentAQI =
+              result.aqi;
+
+            updatePollution();
+
+            updateAirInformation(
+              result.usedFallback
+                ? "Fallback data"
+                : result.cached
+                  ? "Cached live data"
+                  : "Live data"
+            );
+
+            statusElement.textContent =
+              result.usedFallback
+                ? "Live AQI failed. Fallback data is shown."
+                : "Live AQI loaded for your location.";
+          },
+
+          error => {
+            console.warn(
+              "Location failed:",
+              error
+            );
+
+            applyLocationFallback(
+              "Location permission was unavailable."
+            );
+          },
+
+          {
+            enableHighAccuracy: false,
+            timeout: 10000,
+            maximumAge: 300000
+          }
+        );
+    }
+
+    function applyLocationFallback(
+      message
+    ) {
+      selectedCityName =
+        "My Location";
+
+      currentAQI = 3;
+
+      updatePollution();
+
+      updateAirInformation(
+        "Fallback data"
+      );
+
+      statusElement.textContent =
+        `${message} Fallback data is shown.`;
+    }
+
+    document
+      .querySelectorAll(
+        "[data-city]"
+      )
+      .forEach(button => {
+        button.addEventListener(
+          "click",
+          () => {
+            selectCity(
+              button.dataset.city
+            );
+          }
+        );
+      });
+
+    // =========================================================
+    // 11. PLANT TREES
+    // =========================================================
+
+    plantButton.addEventListener(
+      "click",
+      () => {
+        if (
+          !cityPlaced ||
+          !treeTemplate
+        ) {
+          statusElement.textContent =
+            "Place the city before planting trees.";
+
+          return;
+        }
+
+        if (
+          treeCount >= MAX_TREES
+        ) {
+          statusElement.textContent =
+            "Tree limit reached to protect performance.";
+
+          return;
+        }
+
+        const tree =
+          treeTemplate.clone(true);
+
+        const angle =
+          Math.random() *
+          Math.PI *
+          2;
+
+        const distance =
+          0.20 +
+          Math.random() * 0.07;
+
+        tree.position.set(
+          Math.cos(angle) *
+            distance,
+          0,
+          Math.sin(angle) *
+            distance
+        );
+
+        tree.rotation.y =
+          Math.random() *
+          Math.PI *
+          2;
+
+        cityRoot.add(tree);
+
+        treeCount += 1;
+
+        /*
+          Visual simulation only.
+          This does not modify the real API reading.
+        */
+        simulatedPollutionReduction +=
+          0.055;
+
+        updatePollution();
+
+        statusElement.textContent =
+          `Tree ${treeCount}/${MAX_TREES} planted. ` +
+          "Pollution reduction is simulated.";
+
+        if (
+          treeCount >= MAX_TREES
+        ) {
+          plantButton.disabled = true;
+        }
+      }
+    );
+
+    // =========================================================
+    // 12. RESET PLACEMENT
+    // =========================================================
+
+    resetButton.addEventListener(
+      "click",
+      () => {
+        cityPlaced = false;
+        cityRoot.visible = false;
+
+        cityRoot.position.set(
+          0,
+          0,
+          0
+        );
+
+        cityRoot.quaternion.identity();
+        cityRoot.scale.setScalar(1);
+
+        plantButton.disabled = true;
+        resetButton.disabled = true;
+
+        instructionsElement.textContent =
+          "Move your phone slowly, find the floor, and tap the green ring.";
+
+        statusElement.textContent =
+          "Placement reset. Find another surface.";
+      }
+    );
+
+    // =========================================================
+    // 13. PLACE CITY
+    // =========================================================
+
+    const controller =
+      renderer.xr.getController(0);
+
+    controller.addEventListener(
+      "select",
+      placeCity
+    );
+
+    scene.add(controller);
+
+    function placeCity() {
+      if (
+        cityPlaced ||
+        !reticle.visible ||
+        !cityModel
+      ) {
+        return;
+      }
+
+      reticle.matrix.decompose(
+        cityRoot.position,
+        cityRoot.quaternion,
+        cityRoot.scale
+      );
+
+      cityRoot.visible = true;
+      cityPlaced = true;
+      reticle.visible = false;
+
+      plantButton.disabled =
+        treeCount >= MAX_TREES;
+
+      resetButton.disabled = false;
+
+      instructionsElement.textContent =
+        "Drag with one finger to rotate. Pinch with two fingers to resize.";
+
+      statusElement.textContent =
+        "City placed successfully.";
+    }
+
+    // =========================================================
+    // 14. ROTATE AND RESIZE
+    // =========================================================
+
+    let lastTouchX = null;
+    let pinchStartDistance = null;
+    let pinchStartScale = 1;
+
+    function isControl(
+      target
+    ) {
+      return Boolean(
+        target.closest(
+          "button, a"
+        )
+      );
+    }
+
+    function getTouchDistance(
+      firstTouch,
+      secondTouch
+    ) {
+      return Math.hypot(
+        secondTouch.clientX -
+          firstTouch.clientX,
+
+        secondTouch.clientY -
+          firstTouch.clientY
+      );
+    }
+
+    overlay.addEventListener(
+      "touchstart",
+      event => {
+        if (
+          !cityPlaced ||
+          isControl(event.target)
+        ) {
+          return;
+        }
+
+        if (
+          event.touches.length === 1
+        ) {
+          lastTouchX =
+            event.touches[0].clientX;
+
+          pinchStartDistance = null;
+        }
+
+        if (
+          event.touches.length === 2
+        ) {
+          event.preventDefault();
+
+          pinchStartDistance =
+            getTouchDistance(
+              event.touches[0],
+              event.touches[1]
+            );
+
+          pinchStartScale =
+            cityRoot.scale.x;
+        }
+      },
+
+      {
+        passive: false
+      }
+    );
+
+    overlay.addEventListener(
+      "touchmove",
+      event => {
+        if (
+          !cityPlaced ||
+          isControl(event.target)
+        ) {
+          return;
+        }
+
+        if (
+          event.touches.length === 1 &&
+          lastTouchX !== null
+        ) {
+          event.preventDefault();
+
+          const currentX =
+            event.touches[0].clientX;
+
+          const movementX =
+            currentX -
+            lastTouchX;
+
+          cityRoot.rotateY(
+            movementX * 0.01
+          );
+
+          lastTouchX = currentX;
+        }
+
+        if (
+          event.touches.length === 2 &&
+          pinchStartDistance !== null
+        ) {
+          event.preventDefault();
+
+          const currentDistance =
+            getTouchDistance(
+              event.touches[0],
+              event.touches[1]
+            );
+
+          const ratio =
+            currentDistance /
+            pinchStartDistance;
+
+          const newScale =
+            THREE.MathUtils.clamp(
+              pinchStartScale *
+                ratio,
+              0.5,
+              2
+            );
+
+          cityRoot.scale.setScalar(
+            newScale
+          );
+        }
+      },
+
+      {
+        passive: false
+      }
+    );
+
+    overlay.addEventListener(
+      "touchend",
+      event => {
+        if (
+          event.touches.length === 0
+        ) {
+          lastTouchX = null;
+          pinchStartDistance = null;
+        }
+
+        if (
+          event.touches.length === 1
+        ) {
+          lastTouchX =
+            event.touches[0].clientX;
+
+          pinchStartDistance = null;
+        }
+      }
+    );
+
+    /*
+      Prevent UI button taps from placing the city.
+    */
+    document
+      .querySelectorAll(
+        "button, a"
+      )
+      .forEach(element => {
+        element.addEventListener(
+          "beforexrselect",
+          event => {
+            event.preventDefault();
+          }
+        );
+      });
+
+    // =========================================================
+    // 15. POLLUTION ANIMATION
+    // =========================================================
+
+    function animatePollution(
+      timestamp
+    ) {
+      if (!cityPlaced) {
+        return;
+      }
+
+      const positionAttribute =
+        pollutionGeometry.getAttribute(
+          "position"
+        );
+
+      const positions =
+        positionAttribute.array;
+
+      const visibleCount =
+        pollutionGeometry.drawRange.count;
+
+      for (
+        let i = 0;
+        i < visibleCount;
+        i++
+      ) {
+        const index = i * 3;
+
+        /*
+          Move the particles slowly upward.
+        */
+        positions[index + 1] +=
+          pollutionSpeeds[i];
+
+        /*
+          Add a gentle sideways drift.
+        */
+        positions[index] +=
+          Math.sin(
+            timestamp * 0.001 +
+            pollutionPhases[i]
+          ) * 0.000015;
+
+        /*
+          Recycle particles after they reach the top.
+        */
+        if (
+          positions[index + 1] >
+          0.26
+        ) {
+          positions[index] =
+            (Math.random() - 0.5) *
+            0.54;
+
+          positions[index + 1] =
+            0.025 +
+            Math.random() *
+            0.035;
+
+          positions[index + 2] =
+            (Math.random() - 0.5) *
+            0.43;
+        }
+      }
+
+      positionAttribute.needsUpdate =
+        true;
+    }
+
+    // =========================================================
+    // 16. WEBXR SETUP
+    // =========================================================
+
+    async function setupWebXR() {
+      if (!navigator.xr) {
+        showUnsupported();
+        return;
+      }
+
+      try {
+        const supported =
+          await navigator.xr
+            .isSessionSupported(
+              "immersive-ar"
+            );
+
+        if (!supported) {
+          showUnsupported();
+          return;
+        }
+
+        const arButton =
+          ARButton.createButton(
+            renderer,
+            {
+              requiredFeatures: [
+                "hit-test"
+              ],
+
+              optionalFeatures: [
+                "dom-overlay"
+              ],
+
+              domOverlay: {
+                root: overlay
+              }
+            }
+          );
+
+        /*
+          ARButton normally creates this ID itself, but assigning it here
+          guarantees that our CSS styling is applied.
+        */
+        arButton.id = "ARButton";
+
+        document.body.appendChild(
+          arButton
+        );
+      } catch (error) {
+        console.error(
+          "WebXR check failed:",
+          error
+        );
+
+        showUnsupported();
+      }
+    }
+
+    function showUnsupported() {
+      unsupportedElement.style.display =
+        "flex";
+
+      overlay.style.display =
+        "none";
+
+      renderer.domElement.style.display =
+        "none";
+    }
+
+    renderer.xr.addEventListener(
+      "sessionstart",
+      () => {
+        statusElement.textContent =
+          "AR started. Move your phone slowly to detect the floor.";
+      }
+    );
+
+    renderer.xr.addEventListener(
+      "sessionend",
+      () => {
+        hitTestSource = null;
+        localReferenceSpace = null;
+        hitTestRequested = false;
+        reticle.visible = false;
+
+        statusElement.textContent =
+          "AR session ended. You can start it again.";
+      }
+    );
+
+    // =========================================================
+    // 17. HIT-TEST AND RENDER LOOP
+    // =========================================================
+
+    renderer.setAnimationLoop(
+      (timestamp, frame) => {
+        if (frame) {
+          const session =
+            renderer.xr.getSession();
+
+          if (!hitTestRequested) {
+            session
+              .requestReferenceSpace(
+                "viewer"
+              )
+              .then(
+                viewerSpace => {
+                  return session
+                    .requestHitTestSource({
+                      space: viewerSpace
+                    });
+                }
+              )
+              .then(source => {
+                hitTestSource =
+                  source;
+              })
+              .catch(error => {
+                console.error(
+                  "Hit-test failed:",
+                  error
+                );
+
+                statusElement.textContent =
+                  "Surface detection could not start.";
+              });
+
+            session
+              .requestReferenceSpace(
+                "local"
+              )
+              .then(referenceSpace => {
+                localReferenceSpace =
+                  referenceSpace;
+              });
+
+            hitTestRequested = true;
+          }
+
+          if (
+            hitTestSource &&
+            localReferenceSpace &&
+            !cityPlaced
+          ) {
+            const results =
+              frame.getHitTestResults(
+                hitTestSource
+              );
+
+            if (
+              results.length > 0
+            ) {
+              const hit =
+                results[0];
+
+              const pose =
+                hit.getPose(
+                  localReferenceSpace
+                );
+
+              if (pose) {
+                reticle.visible = true;
+
+                reticle.matrix.fromArray(
+                  pose.transform.matrix
+                );
+
+                statusElement.textContent =
+                  "Floor detected. Tap the green ring to place the city.";
+              }
+            } else {
+              reticle.visible = false;
+            }
+          } else if (cityPlaced) {
+            reticle.visible = false;
+          }
+        }
+
+        animatePollution(timestamp);
+
+        renderer.render(
+          scene,
+          camera
+        );
+      }
+    );
+
+    // =========================================================
+    // 18. SCREEN RESIZING
+    // =========================================================
+
+    window.addEventListener(
+      "resize",
+      () => {
+        camera.aspect =
+          window.innerWidth /
+          window.innerHeight;
+
+        camera.updateProjectionMatrix();
+
+        renderer.setSize(
+          window.innerWidth,
+          window.innerHeight
+        );
+      }
+    );
+
+    // =========================================================
+    // 19. START
+    // =========================================================
+
+    loadModels();
+    setupWebXR();
+  </script>
+</body>
+</html>
